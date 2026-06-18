@@ -1,0 +1,54 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  IMAGE_NAME: devsecopsdemo
+
+steps:
+
+# ✅ Maven Compile + Test
+- task: Maven@3
+  inputs:
+    mavenPomFile: 'pom.xml'
+    goals: 'clean compile test'
+
+# ✅ SonarQube
+- script: |
+    mvn sonar:sonar \
+    -Dsonar.projectKey=devsecops-demo \
+    -Dsonar.host.url=http://<YOUR_SONAR_IP>:9000 \
+    -Dsonar.login=<TOKEN>
+
+# ✅ Dependency Check
+- script: mvn dependency-check:check
+
+# ✅ Build JAR
+- script: mvn package
+
+# ✅ Docker Build
+- script: |
+    docker build -t $(IMAGE_NAME):latest .
+
+# ✅ DockerHub Login + Push
+- script: |
+    echo "<PASSWORD>" | docker login -u "<USERNAME>" --password-stdin
+    docker tag $(IMAGE_NAME):latest <USERNAME>/$(IMAGE_NAME):latest
+    docker push <USERNAME>/$(IMAGE_NAME):latest
+
+# ✅ Install Trivy
+- script: |
+    sudo apt-get update
+    sudo apt-get install -y wget
+    wget https://github.com/aquasecurity/trivy/releases/latest/download/trivy_0.50.1_Linux-64bit.deb
+    sudo dpkg -i trivy_0.50.1_Linux-64bit.deb
+
+# ✅ Trivy Scan
+- script: |
+    trivy image <USERNAME>/$(IMAGE_NAME):latest
+
+# ✅ Deploy Container
+- script: |
+    docker run -d -p 8080:8080 <USERNAME>/$(IMAGE_NAME):latest
